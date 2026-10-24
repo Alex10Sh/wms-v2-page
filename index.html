@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob: mediastream:; connect-src https://script.google.com https://script.googleusercontent.com; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WMS v2</title>
+  <style>
+    :root { --bg: #ffffff; --fg: #1a1a1a; --muted: #5c5c5c; --line: #d0d0d0; --card: #f4f4f4;
+      --accent: #0b57d0; --accent-fg: #ffffff; --bad: #b3261e; --good: #146c2e; --warn: #8a5a00; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #121212; --fg: #f0f0f0; --muted: #b0b0b0; --line: #3a3a3a; --card: #1e1e1e;
+        --accent: #a8c7fa; --accent-fg: #0b1d3a; --bad: #f2b8b5; --good: #8fd19e; --warn: #f5c56b; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 16px; background: var(--bg); color: var(--fg);
+      font: 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    h1 { font-size: 24px; margin: 0 0 12px; }
+    h2 { font-size: 20px; margin: 20px 0 8px; }
+    .muted { color: var(--muted); font-size: 16px; }
+    .bad { color: var(--bad); }
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    [hidden] { display: none !important; }
+    label { display: block; margin: 12px 0 4px; font-size: 16px; }
+    input, select, button { font: inherit; min-height: 44px; border-radius: 8px; }
+    input, select { width: 100%; padding: 8px 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+    button { padding: 8px 16px; border: 0; background: var(--accent); color: var(--accent-fg); cursor: pointer; }
+    button.secondary { background: var(--card); color: var(--fg); border: 1px solid var(--line); }
+    button:disabled { opacity: 0.6; }
+    .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .row > * { flex: 1 1 auto; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 8px 0; }
+    .card p { margin: 4px 0; overflow-wrap: anywhere; }
+    ul.log { list-style: none; padding: 0; margin: 8px 0; }
+    ul.log li { padding: 6px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+    #bar { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
+    #queue { font-weight: 600; }
+    #cam-view { position: relative; margin: 8px 0; overflow: hidden; border-radius: 8px; background: #000; }
+    #cam-video { display: block; width: 100%; max-height: 50vh; object-fit: cover; }
+    #cam-frame { position: absolute; left: 10%; right: 10%; top: 30%; bottom: 30%; border: 2px solid #fff;
+      border-radius: 8px; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.3); pointer-events: none; }
+  </style>
+</head>
+<body>
+  <h1>WMS v2</h1>
+
+  <section id="screen-noapi" hidden>
+    <p>Нет адреса склада на этом телефоне.</p>
+    <p class="muted">Откройте ссылку для телефона, которую даёт владелец: она один раз запишет адрес, дальше страница открывается сама.</p>
+  </section>
+
+  <section id="screen-login" hidden>
+    <form id="login-form" autocomplete="off">
+      <label for="login-name">Имя</label>
+      <input id="login-name" name="name" maxlength="40" required>
+      <label for="login-pin">PIN</label>
+      <input id="login-pin" name="pin" type="password" inputmode="numeric" maxlength="8" required>
+      <p><button id="login-go" type="submit">Войти</button></p>
+      <p id="login-msg" class="bad" role="alert"></p>
+    </form>
+  </section>
+
+  <section id="screen-pin" hidden>
+    <p>Первый вход: придумайте свой PIN, 4–8 цифр. Выданный PIN больше не подойдёт.</p>
+    <form id="pin-form" autocomplete="off">
+      <label for="pin-new">Новый PIN</label>
+      <input id="pin-new" type="password" inputmode="numeric" maxlength="8" required>
+      <label for="pin-again">Ещё раз</label>
+      <input id="pin-again" type="password" inputmode="numeric" maxlength="8" required>
+      <p><button id="pin-go" type="submit">Сохранить PIN</button></p>
+      <p id="pin-msg" class="bad" role="alert"></p>
+    </form>
+  </section>
+
+  <section id="screen-main" hidden>
+    <div id="bar">
+      <span id="who"></span>
+      <button id="logout" class="secondary" type="button">Выйти</button>
+    </div>
+    <p id="queue" aria-live="polite"></p>
+    <p id="net" class="muted" aria-live="polite"></p>
+    <ul id="results" class="log"></ul>
+
+    <h2>Скан</h2>
+    <form id="scan-form" autocomplete="off">
+      <label for="scan">Штрихкод: сканер или клавиатура, затем Enter</label>
+      <input id="scan" autocapitalize="off" spellcheck="false" maxlength="64">
+    </form>
+    <p><button id="cam-open" class="secondary" type="button" hidden>Сканировать камерой</button></p>
+    <div id="cam-box" hidden>
+      <div id="cam-view">
+        <video id="cam-video" playsinline muted></video>
+        <div id="cam-frame"></div>
+      </div>
+      <p class="row"><button id="cam-close" class="secondary" type="button">Закрыть камеру</button></p>
+    </div>
+    <p id="cam-msg" class="muted" aria-live="polite"></p>
+    <ul id="scan-log" class="log"></ul>
+
+    <div id="control-box" hidden>
+      <h2>Контроль</h2>
+      <p><button id="control-refresh" class="secondary" type="button">Обновить</button></p>
+      <p id="control-empty" class="muted" hidden>Открытых записей нет.</p>
+      <div id="control-list"></div>
+    </div>
+
+    <div id="workers-box" hidden>
+      <h2>Сотрудники</h2>
+      <div id="workers-list"></div>
+      <form id="worker-form" class="card" autocomplete="off">
+        <p><b>Новый сотрудник</b></p>
+        <label for="worker-name">Имя</label>
+        <input id="worker-name" maxlength="40" required>
+        <label for="worker-role">Роль</label>
+        <select id="worker-role">
+          <option>сборщик</option><option>старшая</option><option>владелец</option>
+        </select>
+        <label for="worker-pin">Временный PIN</label>
+        <input id="worker-pin" type="password" inputmode="numeric" maxlength="8" required>
+        <p><button type="submit">Завести</button></p>
+        <p id="worker-msg" role="alert"></p>
+      </form>
+      <div id="share-box" class="card" hidden>
+        <p><b>Ссылка для телефона сотрудника</b></p>
+        <p class="muted">Отправьте сотруднику лично, не в общий чат: в ссылке адрес склада.</p>
+        <input id="share-link" readonly>
+        <p><button id="share-copy" class="secondary" type="button">Скопировать</button></p>
+      </div>
+    </div>
+  </section>
+
+  <p class="muted">Версия <span id="version">645bbf0</span> · собрано 2026-10-24T13:50:02.771Z</p>
+
+  <script src="zxing.min.js"></script>
+  <script src="app.js?v=645bbf0"></script>
+</body>
+</html>

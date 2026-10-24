@@ -1,0 +1,4 @@
+WMS v2 · страница склада
+Includes ZXing for JS (@zxing/library@0.21.3), https://github.com/zxing-js/library
+Licensed under the Apache License, Version 2.0 — see LICENSE-zxing.txt.
+zxing.min.js is the unmodified file umd/index.min.js of the npm package, sha256 d7cc8f69dd70bdcf3ac00c9ae572bf2acb9f4132ba379c72df842e4db918652d.
