@@ -1,4 +1,6 @@
-// Собрано scripts/build-page.mjs из src/page/index.html — не править руками. Версия 645bbf0.
+// Собрано scripts/build-page.mjs из src/page/index.html — не править руками. Версия 0d56335.
+// sha256 разрешённых адресов сервера: страница принимает ссылку #api= только с ними.
+var WMS_API_SHA256 = ["b4b0e994e43162f24ab0c2b759ff6f55439f29861271d2db3ec79633c5f298c4"];
     // Перевод раскладки — первым, до любого скана (находка v1.2 #28). Тот же, что src/core/scan.js.
     var RU = 'йцукенгшщзхъфывапролджэячсмитьбюЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЯЧСМИТЬБЮ';
     var EN = "qwertyuiop[]asdfghjkl;'zxcvbnm,.QWERTYUIOP{}ASDFGHJKL:\"ZXCVBNM<>";
@@ -24,19 +26,39 @@
     // Адрес сервера (веб-приложение Apps Script, …/exec) на своей странице — не в коде: в публичном
     // репозитории его нет (проверка 24.10). Владелец даёт ссылку …/#api=<адрес>, страница
     // запоминает адрес на этом телефоне и убирает его из адресной строки. Часть после # на
-    // сервер GitHub не уходит.
+    // сервер GitHub не уходит. Принимается только адрес, чей sha256 зашит при сборке
+    // (WMS_API_SHA256, src/page/api-sha256.txt): чужая ссылка не подменит сервер.
     var KEY_API = 'wms2.api';
     var API_RE = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,120}\/exec$/;
     var IN_APPS_SCRIPT = !!(window.google && google.script && google.script.run);
-    (function () {
+    var apiRejected = false;
+    window.WMS_EXEC = '';
+    function sha256hex(text) {
+      return crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)).then(function (buf) {
+        return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+      });
+    }
+    function apiAllowed(url) {
+      if (!url || !API_RE.test(url) || !(window.crypto && crypto.subtle)) return Promise.resolve(false);
+      return sha256hex(url).then(function (h) { return (window.WMS_API_SHA256 || []).indexOf(h) !== -1; });
+    }
+    var apiReady = IN_APPS_SCRIPT ? Promise.resolve() : (function () {
       var m = /(?:^#|&)api=([^&]+)/.exec(location.hash || '');
-      if (!m) return;
-      var url = '';
-      try { url = decodeURIComponent(m[1]); } catch (e) { url = ''; }
-      if (API_RE.test(url)) save(KEY_API, url);
-      if (window.history && history.replaceState) history.replaceState(null, '', location.pathname + location.search);
+      var fromLink = '';
+      if (m) {
+        try { fromLink = decodeURIComponent(m[1]); } catch (e) { fromLink = '-'; }
+        if (window.history && history.replaceState) history.replaceState(null, '', location.pathname + location.search);
+      }
+      var stored = load(KEY_API, '');
+      return apiAllowed(fromLink).then(function (ok) {
+        if (ok) { save(KEY_API, fromLink); window.WMS_EXEC = fromLink; return; }
+        apiRejected = !!fromLink;
+        return apiAllowed(stored).then(function (okStored) {
+          if (okStored) window.WMS_EXEC = stored;
+          else if (stored) save(KEY_API, null);
+        });
+      });
     })();
-    window.WMS_EXEC = IN_APPS_SCRIPT ? '' : load(KEY_API, '');
     // Ссылку открыли во вкладке, где страница уже открыта, — перечитать её с новым адресом.
     window.addEventListener('hashchange', function () { if (/(?:^#|&)api=/.test(location.hash)) location.reload(); });
 
@@ -91,9 +113,12 @@
     }
 
     function show(name) {
-      ['noapi', 'login', 'pin', 'main'].forEach(function (s) { $('screen-' + s).hidden = s !== name; });
+      ['framed', 'noapi', 'login', 'pin', 'main'].forEach(function (s) { $('screen-' + s).hidden = s !== name; });
       if (name === 'login') $('login-name').focus();
-      if (name === 'pin') $('pin-new').focus();
+      if (name === 'pin') {
+        $('pin-hint').textContent = 'Первый вход: придумайте свой PIN, ' + ((session && session.pinMin) || 6) + '–8 цифр. Выданный PIN больше не подойдёт.';
+        $('pin-new').focus();
+      }
       if (name === 'main') $('scan').focus();
     }
 
@@ -173,7 +198,7 @@
         $('login-go').disabled = false;
         $('login-pin').value = '';
         if (r.status !== 'ok') { $('login-msg').textContent = r.reason; return; }
-        session = { token: r.token, name: r.name, role: r.role, exp: r.exp, mustChangePin: r.mustChangePin };
+        session = { token: r.token, name: r.name, role: r.role, exp: r.exp, mustChangePin: r.mustChangePin, pinMin: r.pinMin };
         save(KEY_SESSION, session);
         start();
       }).catch(function () {
@@ -441,7 +466,10 @@
     });
 
     function start() {
-      if (!IN_APPS_SCRIPT && !window.WMS_EXEC) { show('noapi'); return; }
+      // Во фрейме чужой страницы не работать: кнопки можно подсунуть под чужой текст.
+      // Внутри Apps Script страница всегда во фрейме Google — там проверки нет.
+      if (!IN_APPS_SCRIPT && window.top !== window.self) { show('framed'); return; }
+      if (!IN_APPS_SCRIPT && !window.WMS_EXEC) { $('noapi-bad').hidden = !apiRejected; show('noapi'); return; }
       if (!session) { show('login'); return; }
       if (Date.parse(session.exp) <= Date.now()) { needLogin('Вход истёк — войти заново'); return; }
       if (session.mustChangePin) { show('pin'); return; }
@@ -457,5 +485,5 @@
       loadWorkers();
       pump();
     }
-    start();
+    apiReady.then(start, start);
   

@@ -46,7 +46,12 @@
 <body>
   <h1>WMS v2</h1>
 
+  <section id="screen-framed" hidden>
+    <p class="bad">Страница открыта внутри другой страницы. Откройте её напрямую по ссылке от владельца.</p>
+  </section>
+
   <section id="screen-noapi" hidden>
+    <p id="noapi-bad" class="bad" hidden>Ссылка не от склада — не принята. Попросите ссылку у владельца.</p>
     <p>Нет адреса склада на этом телефоне.</p>
     <p class="muted">Откройте ссылку для телефона, которую даёт владелец: она один раз запишет адрес, дальше страница открывается сама.</p>
   </section>
@@ -63,7 +68,7 @@
   </section>
 
   <section id="screen-pin" hidden>
-    <p>Первый вход: придумайте свой PIN, 4–8 цифр. Выданный PIN больше не подойдёт.</p>
+    <p id="pin-hint">Первый вход: придумайте свой PIN. Выданный PIN больше не подойдёт.</p>
     <form id="pin-form" autocomplete="off">
       <label for="pin-new">Новый PIN</label>
       <input id="pin-new" type="password" inputmode="numeric" maxlength="8" required>
@@ -131,9 +136,9 @@
     </div>
   </section>
 
-  <p class="muted">Версия <span id="version">645bbf0</span> · собрано 2026-10-24T13:50:02.771Z</p>
+  <p class="muted">Версия <span id="version">0d56335</span> · собрано 2026-10-24T13:58:36.510Z</p>
 
   <script src="zxing.min.js"></script>
-  <script src="app.js?v=645bbf0"></script>
+  <script src="app.js?v=0d56335"></script>
 </body>
 </html>

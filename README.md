@@ -4,7 +4,7 @@
 Данные и вход — на сервере склада; в этом репозитории только статика.
 
 Собирается из закрытого репозитория (`scripts/build-page.mjs`), руками не правится.
-Версия 645bbf0.
+Версия 0d56335.
 
 Распознавание штрихкодов — [ZXing for JS](https://github.com/zxing-js/library) 0.21.3,
 Apache License 2.0 (`LICENSE-zxing.txt`, `NOTICE`).
