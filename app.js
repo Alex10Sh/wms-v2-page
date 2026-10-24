@@ -1,4 +1,4 @@
-// Собрано scripts/build-page.mjs из src/page/index.html — не править руками. Версия 0d56335.
+// Собрано scripts/build-page.mjs из src/page/index.html — не править руками. Версия 81497ef.
 // sha256 разрешённых адресов сервера: страница принимает ссылку #api= только с ними.
 var WMS_API_SHA256 = ["b4b0e994e43162f24ab0c2b759ff6f55439f29861271d2db3ec79633c5f298c4"];
     // Перевод раскладки — первым, до любого скана (находка v1.2 #28). Тот же, что src/core/scan.js.
@@ -465,6 +465,113 @@ var WMS_API_SHA256 = ["b4b0e994e43162f24ab0c2b759ff6f55439f29861271d2db3ec79633c
       else if (document.execCommand && document.execCommand('copy')) done();
     });
 
+    // Клиенты, кабинеты, токены WB, каталог (05): старшая обновляет каталог, владелец — всё.
+    function dateRu(iso) {
+      return iso ? iso.slice(8, 10) + '.' + iso.slice(5, 7) + '.' + iso.slice(0, 4) : '';
+    }
+    function settingsMsg(text, cls) {
+      $('settings-msg').textContent = text || '';
+      $('settings-msg').className = cls || '';
+    }
+    function settingsAnswer(r, okText) {
+      if (r.status === 'auth') { needLogin(r.reason); return false; }
+      if (r.status === 'ok') { settingsMsg(okText || 'Готово', 'good'); return true; }
+      settingsMsg(r.reason || 'Не получилось', 'bad');
+      return false;
+    }
+    function loadSettings() {
+      if (!session || (session.role !== 'старшая' && session.role !== 'владелец')) return;
+      var owner = session.role === 'владелец';
+      $('client-form').hidden = !owner;
+      $('cabinet-form').hidden = !owner;
+      call('settingsList', session.token).then(function (r) {
+        var list = $('cabinets-list');
+        clear(list);
+        if (r.status === 'auth') { needLogin(r.reason); return; }
+        if (r.status !== 'ok') { list.appendChild(el('p', r.reason, 'bad')); return; }
+        var sel = $('cabinet-client');
+        clear(sel);
+        r.clients.forEach(function (c) { sel.appendChild(el('option', c.name)); });
+        if (!r.clients.length) list.appendChild(el('p', 'Клиентов пока нет.', 'muted'));
+        r.clients.forEach(function (c) {
+          if (!r.cabinets.some(function (k) { return k.client === c.name; })) {
+            list.appendChild(el('p', c.name + ' · тарифы: ' + c.tariffRow + ' · кабинетов нет', 'muted'));
+          }
+        });
+        r.cabinets.forEach(function (k) { list.appendChild(cabinetCard(k, owner)); });
+      }).catch(function () { $('cabinets-list').textContent = 'Нет связи — обновите страницу.'; });
+    }
+    function cabinetCard(k, owner) {
+      var card = el('div', undefined, 'card');
+      card.appendChild(el('p', k.name + ' (' + k.code + ') · клиент ' + k.client));
+      card.appendChild(el('p', 'Товаров в каталоге: ' + k.items + ' · поставки WB через v2: ' + (k.ownSupplies ? 'да' : 'нет'), 'muted'));
+      k.tokens.forEach(function (t) {
+        var left = t.until ? (Date.parse(t.until) - Date.now()) / 86400000 : -1;
+        var text = 'Токен «' + t.title + '»: ' + (!t.has ? 'нет' : t.until ? 'до ' + dateRu(t.until) : 'срок неизвестен');
+        card.appendChild(el('p', text, !t.has || left < 0 ? 'bad' : left <= 14 ? 'warn' : ''));
+      });
+      var res = el('p', '', 'muted');
+      var refresh = el('button', 'Обновить каталог', 'secondary');
+      refresh.type = 'button';
+      refresh.addEventListener('click', function () {
+        refresh.disabled = true;
+        res.textContent = 'Читаю карточки WB…';
+        call('catalogRefresh', session.token, k.code).then(function (r) {
+          refresh.disabled = false;
+          if (r.status === 'auth') { needLogin(r.reason); return; }
+          if (r.status !== 'ok') { res.textContent = r.reason; res.className = 'bad'; return; }
+          var x = r.result;
+          res.className = 'good';
+          res.textContent = 'Размеров ' + x.sizes + ', баркодов ' + x.barcodes + ': новых ' + x.added + ', изменено ' + x.changed +
+            ', без изменений ' + x.same + (x.markRequired ? ', нужен код ЧЗ — ' + x.markRequired : '') +
+            (x.missing ? ', нет в WB — ' + x.missing : '') + (x.duplicates ? ', один баркод у двух размеров — ' + x.duplicates + ' (в «Контроле»)' : '');
+        }).catch(function () { refresh.disabled = false; res.textContent = 'Нет связи — повторить'; res.className = 'bad'; });
+      });
+      card.appendChild(el('p')).appendChild(refresh);
+      card.appendChild(res);
+      if (owner) {
+        var kind = el('select');
+        k.tokens.forEach(function (t) { var o = el('option', t.title); o.value = t.kind; kind.appendChild(o); });
+        var value = el('input');
+        value.type = 'password';
+        value.autocomplete = 'off';
+        value.spellcheck = false;
+        value.placeholder = 'Вставить токен из кабинета WB';
+        var save = el('button', 'Сохранить токен', 'secondary');
+        save.type = 'button';
+        save.addEventListener('click', function () {
+          var v = value.value;
+          value.value = '';
+          if (!v) return;
+          settingsMsg('Проверяю токен в WB…');
+          call('tokenSave', session.token, k.code, kind.value, v).then(function (r) {
+            if (settingsAnswer(r, 'Токен сохранён, действует до ' + dateRu(r.until))) loadSettings();
+          }).catch(function () { settingsMsg('Нет связи — повторить', 'bad'); });
+        });
+        var row = el('div', undefined, 'row');
+        row.appendChild(kind);
+        row.appendChild(value);
+        row.appendChild(save);
+        card.appendChild(row);
+      }
+      return card;
+    }
+    $('client-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      call('clientAdd', session.token, { name: $('client-name').value, tariffRow: $('client-tariff').value }).then(function (r) {
+        if (settingsAnswer(r, 'Клиент заведён')) { $('client-name').value = ''; $('client-tariff').value = ''; loadSettings(); }
+      }).catch(function () { settingsMsg('Нет связи — повторить', 'bad'); });
+    });
+    $('cabinet-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      call('cabinetAdd', session.token, {
+        client: $('cabinet-client').value, code: $('cabinet-code').value.trim(), name: $('cabinet-name').value,
+        ownSupplies: $('cabinet-supplies').value === 'да',
+      }).then(function (r) {
+        if (settingsAnswer(r, 'Кабинет заведён — теперь вставьте его токены')) { $('cabinet-code').value = ''; $('cabinet-name').value = ''; loadSettings(); }
+      }).catch(function () { settingsMsg('Нет связи — повторить', 'bad'); });
+    });
+
     function start() {
       // Во фрейме чужой страницы не работать: кнопки можно подсунуть под чужой текст.
       // Внутри Apps Script страница всегда во фрейме Google — там проверки нет.
@@ -476,6 +583,7 @@ var WMS_API_SHA256 = ["b4b0e994e43162f24ab0c2b759ff6f55439f29861271d2db3ec79633c
       $('who').textContent = session.name + ' · ' + session.role;
       $('control-box').hidden = !(session.role === 'старшая' || session.role === 'владелец');
       $('workers-box').hidden = session.role !== 'владелец';
+      $('settings-box').hidden = !(session.role === 'старшая' || session.role === 'владелец');
       $('share-box').hidden = IN_APPS_SCRIPT || session.role !== 'владелец';
       $('share-link').value = IN_APPS_SCRIPT ? '' : location.origin + location.pathname + '#api=' + encodeURIComponent(window.WMS_EXEC);
       show('main');
@@ -483,6 +591,7 @@ var WMS_API_SHA256 = ["b4b0e994e43162f24ab0c2b759ff6f55439f29861271d2db3ec79633c
       renderQueue();
       loadControl();
       loadWorkers();
+      loadSettings();
       pump();
     }
     apiReady.then(start, start);

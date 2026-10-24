@@ -111,6 +111,32 @@
       <div id="control-list"></div>
     </div>
 
+    <div id="settings-box" hidden>
+      <h2>Клиенты и кабинеты</h2>
+      <p id="settings-msg" role="alert"></p>
+      <div id="cabinets-list"></div>
+      <form id="client-form" class="card" autocomplete="off" hidden>
+        <p><b>Новый клиент</b></p>
+        <label for="client-name">Название</label>
+        <input id="client-name" maxlength="60" required>
+        <label for="client-tariff">Строка тарифов в «Справочниках»</label>
+        <input id="client-tariff" maxlength="60" placeholder="как в «Справочниках»; пусто — как название">
+        <p><button type="submit">Завести клиента</button></p>
+      </form>
+      <form id="cabinet-form" class="card" autocomplete="off" hidden>
+        <p><b>Новый кабинет WB</b></p>
+        <label for="cabinet-client">Клиент</label>
+        <select id="cabinet-client" required></select>
+        <label for="cabinet-code">Код латиницей</label>
+        <input id="cabinet-code" maxlength="31" autocapitalize="off" spellcheck="false" placeholder="например client1" required>
+        <label for="cabinet-name">Название</label>
+        <input id="cabinet-name" maxlength="60">
+        <label for="cabinet-supplies">Поставки WB через v2</label>
+        <select id="cabinet-supplies"><option value="нет">нет — клиент собирает поставки сам</option><option value="да">да — свой кабинет</option></select>
+        <p><button type="submit">Завести кабинет</button></p>
+      </form>
+    </div>
+
     <div id="workers-box" hidden>
       <h2>Сотрудники</h2>
       <div id="workers-list"></div>
@@ -136,9 +162,9 @@
     </div>
   </section>
 
-  <p class="muted">Версия <span id="version">0d56335</span> · собрано 2026-10-24T13:58:36.510Z</p>
+  <p class="muted">Версия <span id="version">81497ef</span> · собрано 2026-10-24T14:30:27.804Z</p>
 
   <script src="zxing.min.js"></script>
-  <script src="app.js?v=0d56335"></script>
+  <script src="app.js?v=81497ef"></script>
 </body>
 </html>
