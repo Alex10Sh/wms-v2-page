@@ -24,8 +24,10 @@
     .warn { color: var(--warn); }
     [hidden] { display: none !important; }
     label { display: block; margin: 12px 0 4px; font-size: 16px; }
-    input, select, button { font: inherit; min-height: 44px; border-radius: 8px; }
-    input, select { width: 100%; padding: 8px 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+    input, select, button, textarea { font: inherit; min-height: 44px; border-radius: 8px; }
+    input, select, textarea { width: 100%; padding: 8px 12px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); }
+    textarea { font-size: 16px; }
+    summary { min-height: 44px; padding: 10px 0; cursor: pointer; }
     button { padding: 8px 16px; border: 0; background: var(--accent); color: var(--accent-fg); cursor: pointer; }
     button.secondary { background: var(--card); color: var(--fg); border: 1px solid var(--line); }
     button:disabled { opacity: 0.6; }
@@ -33,6 +35,9 @@
     .row > * { flex: 1 1 auto; }
     .card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 8px 0; }
     .card p { margin: 4px 0; overflow-wrap: anywhere; }
+    .day-wrap { overflow-x: auto; }
+    .day-table { border-collapse: collapse; font-size: 15px; }
+    .day-table th, .day-table td { border: 1px solid var(--line); padding: 4px 6px; text-align: left; white-space: nowrap; }
     ul.log { list-style: none; padding: 0; margin: 8px 0; }
     ul.log li { padding: 6px 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
     #bar { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -41,6 +46,23 @@
     #cam-video { display: block; width: 100%; max-height: 50vh; object-fit: cover; }
     #cam-frame { position: absolute; left: 10%; right: 10%; top: 30%; bottom: 30%; border: 2px solid #fff;
       border-radius: 8px; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.3); pointer-events: none; }
+    #print-area { display: none; }
+    /* Этикетки адресов 58×40 (06): на печать идёт только #print-area, одна этикетка — одна страница. */
+    @media print {
+      @page { size: 58mm 40mm; margin: 0; }
+      body { padding: 0; background: #fff; }
+      body > *:not(#print-area) { display: none !important; }
+      #print-area { display: block; }
+      .label { width: 58mm; height: 40mm; padding: 2mm 2mm 1mm; overflow: hidden; color: #000; background: #fff;
+        text-align: center; break-after: page; page-break-after: always; }
+      .label:last-child { break-after: auto; page-break-after: auto; }
+      .label svg { display: block; width: 54mm; height: 22mm; }
+      .label .cap { font: 700 9mm/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin-top: 1.5mm; }
+      .label .sub { font: 3mm/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin-top: 1mm; }
+      /* Стикер WB 58×40 (14): PNG из WB как есть, на всю страницу. */
+      .label.sticker { padding: 0; }
+      .label.sticker img { display: block; width: 58mm; height: 40mm; }
+    }
   </style>
 </head>
 <body>
@@ -104,11 +126,159 @@
     <p id="cam-msg" class="muted" aria-live="polite"></p>
     <ul id="scan-log" class="log"></ul>
 
+    <div id="receipt-box" hidden>
+      <h2>Приёмка</h2>
+      <div id="receipt-active" class="card" hidden>
+        <p id="receipt-active-title"></p>
+        <label for="receipt-qty">Количество к следующему скану; пусто — 1</label>
+        <input id="receipt-qty" type="number" inputmode="numeric" min="-10000" max="10000">
+        <div id="receipt-choices"></div>
+        <p class="row"><button id="receipt-leave" class="secondary" type="button">Скан — снова в поиск адреса</button></p>
+      </div>
+      <p id="receipt-msg" role="alert"></p>
+      <div id="receipts-open"></div>
+      <form id="receipt-form" class="card" autocomplete="off" hidden>
+        <p><b>Новая приёмка</b></p>
+        <label for="receipt-client">Клиент</label>
+        <select id="receipt-client" required></select>
+        <p><button type="submit">Создать приёмку</button></p>
+      </form>
+      <div id="receipts-closed"></div>
+    </div>
+
+    <div id="place-box" hidden>
+      <h2>Размещение</h2>
+      <div id="place-task" class="card" hidden>
+        <p id="place-task-title"></p>
+        <label for="place-qty">Сколько штук</label>
+        <input id="place-qty" type="number" inputmode="numeric" min="1">
+        <div id="place-pallets-box" hidden>
+          <label for="place-pallets">Паллет клиента ставите (адрес на несколько паллетомест)</label>
+          <input id="place-pallets" type="number" inputmode="numeric" min="0">
+        </div>
+        <p id="place-task-hint" class="muted"></p>
+        <p class="row"><button id="place-cancel" class="secondary" type="button">Отмена</button></p>
+      </div>
+      <p id="place-msg" role="alert"></p>
+      <div id="place-list"></div>
+    </div>
+
+    <div id="pick-box" hidden>
+      <h2>Отбор</h2>
+      <p class="row"><button id="pick-make" type="button" hidden>Сформировать лист отбора</button>
+        <button id="pick-refresh" class="secondary" type="button">Обновить</button></p>
+      <p id="pick-msg" role="alert"></p>
+      <div id="pick-lists"></div>
+      <div id="pick-step" class="card" hidden>
+        <p id="pick-step-title"></p>
+        <p id="pick-step-hint" class="muted"></p>
+        <label for="pick-found">Сколько нашли на адресе</label>
+        <input id="pick-found" type="number" inputmode="numeric" min="0">
+        <p class="row"><button id="pick-take" type="button" disabled>Взял</button>
+          <button id="pick-stop" class="secondary" type="button">Выйти из листа</button></p>
+      </div>
+    </div>
+
+    <div id="pack-box" hidden>
+      <h2>Упаковка</h2>
+      <p id="pack-ready" class="muted"></p>
+      <form id="pack-form" class="row">
+        <label for="pack-scan">Скан товара</label>
+        <input id="pack-scan" autocomplete="off" spellcheck="false" placeholder="баркод товара">
+        <button id="pack-go" type="submit">Упаковать</button>
+      </form>
+      <p id="pack-msg" role="alert"></p>
+      <p class="row"><button id="pack-retry" type="button" hidden>Повторить</button>
+        <button id="pack-refresh" class="secondary" type="button">Обновить</button></p>
+      <div id="pack-return" class="card" hidden>
+        <p id="pack-return-title"></p>
+        <label for="pack-return-loc">Скан этикетки адреса</label>
+        <input id="pack-return-loc" autocomplete="off" spellcheck="false">
+        <p class="row"><button id="pack-return-go" type="button">Вернул на адрес</button>
+          <button id="pack-return-stop" class="secondary" type="button">Отмена</button></p>
+      </div>
+      <div id="pack-back"></div>
+      <div id="pack-supplies"></div>
+      <div id="pack-list"></div>
+    </div>
+
+    <div id="stock-box" hidden>
+      <h2>Остатки</h2>
+      <label for="stock-client">Клиент</label>
+      <select id="stock-client"></select>
+      <p id="stock-msg" role="alert"></p>
+      <div id="recount" class="card" hidden>
+        <p id="recount-title"></p>
+        <p class="muted">Посчитайте всё, что лежит на адресе, и впишите факт по каждой строке (нет товара — 0).</p>
+        <div id="recount-lines"></div>
+        <p class="muted">Ещё товар на адресе — отсканируйте его баркод.</p>
+        <div id="recount-choices"></div>
+        <p class="row"><button id="recount-send" type="button">Отправить пересчёт</button>
+          <button id="recount-cancel" class="secondary" type="button">Отмена</button></p>
+      </div>
+      <div id="fix" class="card" hidden>
+        <p id="fix-title"></p>
+        <label for="fix-qty">Изменение, шт: минус — списание, плюс — приход</label>
+        <input id="fix-qty" type="number" inputmode="numeric">
+        <label for="fix-reason">Причина</label>
+        <select id="fix-reason"><option value="">— выбрать —</option><option>ФБО</option><option>возврат</option><option>брак</option><option>вывоз</option></select>
+        <label for="fix-note">Комментарий</label>
+        <input id="fix-note" maxlength="300">
+        <p class="row"><button id="fix-send" type="button">Записать</button>
+          <button id="fix-cancel" class="secondary" type="button">Отмена</button></p>
+      </div>
+      <div id="stock-list"></div>
+      <details id="initial-box">
+        <summary>Начальные остатки списком</summary>
+        <p class="muted">Строки «товар; адрес; количество» — баркод или ID товара; для адреса на несколько паллетомест четвёртой колонкой — паллет. Копия из таблицы подойдёт. Клиент — выбранный выше. Одна плохая строка — список не загружается, придёт перечень.</p>
+        <label for="initial-list">Список</label>
+        <textarea id="initial-list" rows="6" maxlength="35000"></textarea>
+        <p><button id="initial-load" type="button">Загрузить список</button></p>
+        <p id="initial-msg" role="alert"></p>
+        <ul id="initial-errors"></ul>
+      </details>
+    </div>
+
+    <div id="orders-box" hidden>
+      <h2>Заказы ФБС</h2>
+      <p><button id="orders-refresh" class="secondary" type="button">Обновить</button></p>
+      <p id="orders-msg" role="alert"></p>
+      <div id="orders-summary"></div>
+      <div id="orders-waiting"></div>
+      <details id="orders-xlsx-box">
+        <summary>Запасной путь: xlsx «Новые» из ЛК WB</summary>
+        <p class="muted">Если опрос WB не работает: ЛК WB → Маркетплейс (FBS) → Заказы → Новые → «Скачать список заказов в Excel». Из файла читаются только номер задания, дата, артикул, размер, баркод, склад и статус — данные покупателя не читаются.</p>
+        <label for="orders-xlsx-cabinet">Кабинет</label>
+        <select id="orders-xlsx-cabinet"></select>
+        <label for="orders-xlsx-file">Файл xlsx</label>
+        <input id="orders-xlsx-file" type="file" accept=".xlsx">
+        <label for="orders-xlsx-wh">Склад продавца</label>
+        <select id="orders-xlsx-wh"></select>
+        <p><button id="orders-xlsx-load" type="button" disabled>Загрузить заказы</button></p>
+        <p id="orders-xlsx-msg" role="alert"></p>
+      </details>
+    </div>
+
     <div id="control-box" hidden>
       <h2>Контроль</h2>
       <p><button id="control-refresh" class="secondary" type="button">Обновить</button></p>
       <p id="control-empty" class="muted" hidden>Открытых записей нет.</p>
       <div id="control-list"></div>
+    </div>
+
+    <div id="day-box" hidden>
+      <h2>Итог дня</h2>
+      <p class="muted">Для «Производства»: колонки A–E за день по клиентам. Суммы справа — справочно, в «Производстве» они считаются формулами.</p>
+      <label for="day-date">День</label>
+      <input id="day-date" type="date">
+      <p><button id="day-show" class="secondary" type="button">Показать</button></p>
+      <p id="day-msg" role="alert"></p>
+      <div id="day-table" class="day-wrap"></div>
+      <div id="day-copy-box" hidden>
+        <label for="day-tsv">Строки A–E — вставить в «Производство» с колонки A</label>
+        <textarea id="day-tsv" rows="3" readonly></textarea>
+        <p><button id="day-copy" type="button">Скопировать A–E</button></p>
+      </div>
     </div>
 
     <div id="settings-box" hidden>
@@ -137,6 +307,33 @@
       </form>
     </div>
 
+    <div id="locations-box" hidden>
+      <h2>Адреса</h2>
+      <p id="locations-msg" role="alert"></p>
+      <p id="locations-count" class="muted"></p>
+      <label for="locations-filter">Найти адрес</label>
+      <input id="locations-filter" autocapitalize="characters" spellcheck="false" maxlength="20" placeholder="например НП-1 или 3-1">
+      <div id="locations-list"></div>
+      <form id="labels-form" class="card" autocomplete="off">
+        <p><b>Этикетки 58×40</b></p>
+        <label for="labels-codes">Коды через пробел или запятую; пусто — все найденные</label>
+        <input id="labels-codes" autocapitalize="characters" spellcheck="false" maxlength="2000">
+        <p><button type="submit">Печать этикеток</button></p>
+      </form>
+      <form id="location-form" class="card" autocomplete="off">
+        <p><b>Новый адрес</b></p>
+        <label for="location-code">Код</label>
+        <input id="location-code" maxlength="20" autocapitalize="characters" spellcheck="false" required>
+        <label for="location-zone">Зона</label>
+        <select id="location-zone"></select>
+        <label for="location-capacity">Вместимость, паллет</label>
+        <input id="location-capacity" type="number" inputmode="numeric" min="1" max="20" value="1">
+        <label for="location-order">Порядок обхода; пусто — в конец</label>
+        <input id="location-order" type="number" inputmode="numeric" min="1" max="999999">
+        <p><button type="submit">Добавить адрес</button></p>
+      </form>
+    </div>
+
     <div id="workers-box" hidden>
       <h2>Сотрудники</h2>
       <div id="workers-list"></div>
@@ -161,10 +358,11 @@
       </div>
     </div>
   </section>
+  <div id="print-area" aria-hidden="true"></div>
 
-  <p class="muted">Версия <span id="version">81497ef</span> · собрано 2026-10-24T14:30:27.804Z</p>
+  <p class="muted">Версия <span id="version">a51e39b</span> · собрано 2026-10-26T13:44:28.897Z</p>
 
   <script src="zxing.min.js"></script>
-  <script src="app.js?v=81497ef"></script>
+  <script src="app.js?v=a51e39b"></script>
 </body>
 </html>
