@@ -1,4 +1,4 @@
-// Собрано scripts/build-page.mjs из src/page/index.html — не править руками. Версия a51e39b.
+// Собрано scripts/build-page.mjs из src/page/index.html — не править руками. Версия 0e5adf1.
 // sha256 разрешённых адресов сервера: страница принимает ссылку #api= только с ними.
 var WMS_API_SHA256 = ["b4b0e994e43162f24ab0c2b759ff6f55439f29861271d2db3ec79633c5f298c4"];
     // Перевод раскладки — первым, до любого скана (находка v1.2 #28). Тот же, что src/core/scan.js.
@@ -447,9 +447,22 @@ var WMS_API_SHA256 = ["b4b0e994e43162f24ab0c2b759ff6f55439f29861271d2db3ec79633c
         var list = $('control-list');
         clear(list);
         if (r.status !== 'ok') { list.appendChild(el('p', r.reason, 'bad')); return; }
+        clear($('control-poll'));
+        if (r.poll) $('control-poll').appendChild(pollLine(r.poll));
         $('control-empty').hidden = r.groups.length > 0;
         r.groups.forEach(function (g) { list.appendChild(controlCard(g)); });
       }).catch(function () { $('control-list').textContent = 'Нет связи — нажмите «Обновить».'; });
+    }
+
+    // Опрос заказов WB: сигнал без триггеров — при кончившейся квоте Google заказы перестают приходить молча.
+    function pollLine(p) {
+      if (p.paused) return el('p', 'Опрос заказов WB на паузе (тестовый проект).', 'muted');
+      var when = p.ageMin === null ? 'ещё не проходил' : 'был ' + p.ageMin + ' мин назад';
+      if (!p.late) return el('p', 'Опрос заказов WB ' + when + '.', 'muted');
+      var box = el('div');
+      box.appendChild(el('p', 'Опрос заказов WB ' + when + ': новые заказы не приходят.', 'bad'));
+      box.appendChild(el('p', 'Сообщите владельцу: возможно, кончилась суточная квота автозапусков Google.'));
+      return box;
     }
 
     function controlCard(g) {
